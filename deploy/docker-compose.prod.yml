@@ -1,0 +1,95 @@
+name: relifes
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+    environment:
+      DOMAIN: ${DOMAIN:-photo.relifes.net}
+      R2_SERVICE_URL: ${R2_SERVICE_URL:?Set R2_SERVICE_URL in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging: *logging
+
+  api:
+    build: ../api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: Host=db;Port=5432;Database=${POSTGRES_DB:-relifes};Username=${POSTGRES_USER:-relifes};Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+      R2__ServiceUrl: ${R2_SERVICE_URL:?Set R2_SERVICE_URL in deploy/.env}
+      R2__AccessKeyId: ${R2_ACCESS_KEY_ID:?Set R2_ACCESS_KEY_ID in deploy/.env}
+      R2__SecretAccessKey: ${R2_SECRET_ACCESS_KEY:?Set R2_SECRET_ACCESS_KEY in deploy/.env}
+      R2__BucketName: ${R2_BUCKET:?Set R2_BUCKET in deploy/.env}
+      Places__GoogleApiKey: ${GOOGLE_PLACES_API_KEY:-}
+      Places__DailyGoogleCap: ${GOOGLE_PLACES_DAILY_CAP:-150}
+      Entries__DefaultTimeZone: ${DEFAULT_TIME_ZONE:-UTC}
+    logging: *logging
+
+  web:
+    build: ../web
+    restart: unless-stopped
+    logging: *logging
+
+  # No published port: only the other containers can reach the database.
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-relifes}
+      POSTGRES_USER: ${POSTGRES_USER:-relifes}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      # Postgres 18+ keeps its data in a versioned subfolder of this path.
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+
+  backup:
+    build: ./backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGDATABASE: ${POSTGRES_DB:-relifes}
+      PGUSER: ${POSTGRES_USER:-relifes}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+      BACKUP_BUCKET: ${BACKUP_BUCKET:-${R2_BUCKET}}
+      BACKUP_PREFIX: ${BACKUP_PREFIX:-backups}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      RCLONE_CONFIG_R2_TYPE: s3
+      RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+      RCLONE_CONFIG_R2_ENDPOINT: ${R2_SERVICE_URL:?Set R2_SERVICE_URL in deploy/.env}
+      RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?Set R2_ACCESS_KEY_ID in deploy/.env}
+      RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?Set R2_SECRET_ACCESS_KEY in deploy/.env}
+      RCLONE_CONFIG_R2_NO_CHECK_BUCKET: "true"
+    logging: *logging
+
+volumes:
+  caddy-data:
+  caddy-config:
+  db-data:

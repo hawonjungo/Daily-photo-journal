@@ -1,0 +1,30 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		# Signed image URLs must never leak to other sites through the Referer header.
+		Referrer-Policy "no-referrer"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: {$R2_SERVICE_URL}; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+
+	handle /api/* {
+		# Matches the API's own limit: a 20 MB image plus the other form fields.
+		request_body {
+			max_size 21MB
+		}
+		reverse_proxy api:8080
+	}
+
+	handle /health {
+		reverse_proxy api:8080
+	}
+
+	handle {
+		reverse_proxy web:8080
+	}
+}

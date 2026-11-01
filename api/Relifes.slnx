@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Relifes.Api.Tests/Relifes.Api.Tests.csproj" />
+  <Project Path="Relifes.Api/Relifes.Api.csproj" />
+</Solution>

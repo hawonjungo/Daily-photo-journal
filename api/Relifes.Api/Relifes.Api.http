@@ -1,0 +1,5 @@
+@Relifes.Api_HostAddress = http://localhost:5137
+
+GET {{Relifes.Api_HostAddress}}/health
+
+###
